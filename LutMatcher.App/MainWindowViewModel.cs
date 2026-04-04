@@ -48,12 +48,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public string RoiY { get; set; } = "0";
     public string RoiW { get; set; } = "0";
     public string RoiH { get; set; } = "0";
+    public string ReferenceCameraIndex { get; set; } = "0";
+    public string TargetCameraIndex { get; set; } = "1";
+    public string ReferenceFrameDelay { get; set; } = "0";
+    public string TargetFrameDelay { get; set; } = "0";
 
     private string _logText = "Ready.";
     public string LogText { get => _logText; set { _logText = value; OnPropertyChanged(); } }
 
     public ICommand LoadReferenceCommand { get; }
     public ICommand LoadTargetCommand { get; }
+    public ICommand LoadReferenceCameraCommand { get; }
+    public ICommand LoadTargetCameraCommand { get; }
     public ICommand AutoFitCommand { get; }
     public ICommand ExportCommand { get; }
     public ICommand ResetCommand { get; }
@@ -63,6 +69,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         LoadReferenceCommand = new RelayCommand(() => LoadImage(true));
         LoadTargetCommand = new RelayCommand(() => LoadImage(false));
+        LoadReferenceCameraCommand = new RelayCommand(() => LoadCamera(true));
+        LoadTargetCameraCommand = new RelayCommand(() => LoadCamera(false));
         AutoFitCommand = new RelayCommand(async () => await FitAsync(), () => _reference is not null && _target is not null);
         ExportCommand = new RelayCommand(async () => await ExportAsync(), () => _model is not null);
         ResetCommand = new RelayCommand(Reset);
@@ -105,6 +113,48 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             AppendLog($"Load failed: {ex.Message}");
+        }
+    }
+
+    private void LoadCamera(bool reference)
+    {
+        var rawIndex = reference ? ReferenceCameraIndex : TargetCameraIndex;
+        var rawDelay = reference ? ReferenceFrameDelay : TargetFrameDelay;
+        if (!int.TryParse(rawIndex, out var deviceIndex) || deviceIndex < 0)
+        {
+            AppendLog($"Camera index is invalid: {rawIndex}");
+            return;
+        }
+        if (!int.TryParse(rawDelay, out var frameDelay) || frameDelay < 0)
+        {
+            AppendLog($"Frame delay is invalid: {rawDelay}");
+            return;
+        }
+
+        try
+        {
+            var mat = _loader.LoadFirstFrameFromCamera(deviceIndex, frameDelay);
+            if (reference)
+            {
+                _reference?.Dispose();
+                _reference = mat;
+                ReferencePreview = mat.ToWriteableBitmap();
+                OnPropertyChanged(nameof(ReferencePreview));
+            }
+            else
+            {
+                _target?.Dispose();
+                _target = mat;
+                TargetPreview = mat.ToWriteableBitmap();
+                OnPropertyChanged(nameof(TargetPreview));
+            }
+
+            AppendLog($"Loaded {(reference ? "Reference" : "Target")} from camera index {deviceIndex} (delay: {frameDelay} frames).");
+            NotifyButtons();
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"Camera load failed: {ex.Message}");
         }
     }
 
