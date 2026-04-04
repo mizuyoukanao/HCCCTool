@@ -15,12 +15,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private readonly MetricsCalculator _metrics = new();
     private readonly LutBaker _baker = new();
     private readonly CubeExporter _exporter = new();
+    private readonly ColorRangeService _range = new();
+    private readonly AlignmentService _alignment = new();
 
     private Mat? _reference;
     private Mat? _target;
     private Mat? _corrected;
     private ColorTransformModel? _model;
     private CancellationTokenSource? _cts;
+    private List<ImageLoader.CameraInfo> _cameraOptions = [];
+    private bool _isBusy;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -28,6 +32,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public object? TargetPreview { get; private set; }
     public object? CorrectedPreview { get; private set; }
     public object? DiffPreview { get; private set; }
+    public string MetricsText { get; private set; } = "No metrics yet.";
 
     public bool IsFullRange { get; set; } = true;
     public bool IsVideoRange
@@ -48,13 +53,33 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public string RoiY { get; set; } = "0";
     public string RoiW { get; set; } = "0";
     public string RoiH { get; set; } = "0";
-    public string ReferenceCameraIndex { get; set; } = "0";
-    public string TargetCameraIndex { get; set; } = "1";
+    public bool EnableAutoAlign { get; set; } = true;
+    public List<ImageLoader.CameraInfo> CameraOptions
+    {
+        get => _cameraOptions;
+        private set
+        {
+            _cameraOptions = value;
+            OnPropertyChanged();
+        }
+    }
+    public ImageLoader.CameraInfo? SelectedReferenceCamera { get; set; }
+    public ImageLoader.CameraInfo? SelectedTargetCamera { get; set; }
     public string ReferenceFrameDelay { get; set; } = "0";
     public string TargetFrameDelay { get; set; } = "0";
 
     private string _logText = "Ready.";
     public string LogText { get => _logText; set { _logText = value; OnPropertyChanged(); } }
+    public bool IsBusy
+    {
+        get => _isBusy;
+        private set
+        {
+            _isBusy = value;
+            OnPropertyChanged();
+            NotifyButtons();
+        }
+    }
 
     public ICommand LoadReferenceCommand { get; }
     public ICommand LoadTargetCommand { get; }
@@ -64,17 +89,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ICommand ExportCommand { get; }
     public ICommand ResetCommand { get; }
     public ICommand CancelCommand { get; }
+    public ICommand RefreshCameraListCommand { get; }
+    public ICommand ApplyRoiCommand { get; }
+    public ICommand ClearRoiCommand { get; }
 
     public MainWindowViewModel()
     {
-        LoadReferenceCommand = new RelayCommand(() => LoadImage(true));
-        LoadTargetCommand = new RelayCommand(() => LoadImage(false));
-        LoadReferenceCameraCommand = new RelayCommand(() => LoadCamera(true));
-        LoadTargetCameraCommand = new RelayCommand(() => LoadCamera(false));
-        AutoFitCommand = new RelayCommand(async () => await FitAsync(), () => _reference is not null && _target is not null);
-        ExportCommand = new RelayCommand(async () => await ExportAsync(), () => _model is not null);
-        ResetCommand = new RelayCommand(Reset);
-        CancelCommand = new RelayCommand(() => _cts?.Cancel());
+        LoadReferenceCommand = new RelayCommand(() => LoadImage(true), () => !IsBusy);
+        LoadTargetCommand = new RelayCommand(() => LoadImage(false), () => !IsBusy);
+        LoadReferenceCameraCommand = new RelayCommand(() => LoadCamera(true), () => !IsBusy);
+        LoadTargetCameraCommand = new RelayCommand(() => LoadCamera(false), () => !IsBusy);
+        AutoFitCommand = new RelayCommand(async () => await FitAsync(), () => !IsBusy && _reference is not null && _target is not null);
+        ExportCommand = new RelayCommand(async () => await ExportAsync(), () => !IsBusy && _model is not null);
+        ResetCommand = new RelayCommand(Reset, () => !IsBusy);
+        CancelCommand = new RelayCommand(() => _cts?.Cancel(), () => IsBusy);
+        RefreshCameraListCommand = new RelayCommand(RefreshCameraList, () => !IsBusy);
+        ApplyRoiCommand = new RelayCommand(ApplyRoi, () => !IsBusy);
+        ClearRoiCommand = new RelayCommand(ClearRoi, () => !IsBusy);
+        RefreshCameraList();
     }
 
     private void LoadImage(bool reference)
@@ -118,13 +150,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void LoadCamera(bool reference)
     {
-        var rawIndex = reference ? ReferenceCameraIndex : TargetCameraIndex;
+        RefreshCameraList();
         var rawDelay = reference ? ReferenceFrameDelay : TargetFrameDelay;
-        if (!int.TryParse(rawIndex, out var deviceIndex) || deviceIndex < 0)
+        var selectedCamera = reference ? SelectedReferenceCamera : SelectedTargetCamera;
+        if (selectedCamera is null)
         {
-            AppendLog($"Camera index is invalid: {rawIndex}");
+            AppendLog($"No {(reference ? "Reference" : "Target")} camera selected.");
             return;
         }
+        var deviceIndex = selectedCamera.Index;
         if (!int.TryParse(rawDelay, out var frameDelay) || frameDelay < 0)
         {
             AppendLog($"Frame delay is invalid: {rawDelay}");
@@ -149,7 +183,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(TargetPreview));
             }
 
-            AppendLog($"Loaded {(reference ? "Reference" : "Target")} from camera index {deviceIndex} (delay: {frameDelay} frames).");
+            AppendLog($"Loaded {(reference ? "Reference" : "Target")} from {selectedCamera.Name} (delay: {frameDelay} frames).");
             NotifyButtons();
         }
         catch (Exception ex)
@@ -167,15 +201,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         _cts?.Cancel();
         _cts = new CancellationTokenSource();
+        IsBusy = true;
 
         try
         {
             AppendLog("Fitting started...");
             var roi = ParseRoi();
-            var sampleSet = await Task.Run(() => _extractor.Extract(_reference, _target, roi, !IsFullRange), _cts.Token);
+            var alignmentResult = await Task.Run(
+                () => BuildAlignedTarget(_reference, _target, _cts.Token),
+                _cts.Token);
+            using var alignedTarget = alignmentResult.Target;
+            AppendLog(alignmentResult.Message);
+            var sampleSet = await Task.Run(() => _extractor.Extract(_reference, alignedTarget, roi, !IsFullRange, cancellationToken: _cts.Token), _cts.Token);
             _model = await Task.Run(() => _pipeline.Fit(sampleSet), _cts.Token);
             _corrected?.Dispose();
-            _corrected = await Task.Run(() => ApplyModelToImage(_target, _model), _cts.Token);
+            _corrected = await Task.Run(() => ApplyModelToImage(alignedTarget, _model, !IsFullRange, _cts.Token), _cts.Token);
             CorrectedPreview = _corrected.ToWriteableBitmap();
             OnPropertyChanged(nameof(CorrectedPreview));
 
@@ -186,6 +226,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             var before = sampleSet.Target;
             var after = sampleSet.Target.Select(v => _pipeline.Apply(_model, v)).ToArray();
             var metrics = _metrics.Calculate(sampleSet.Reference, before, after);
+            MetricsText = $"MAE: {metrics.Mae:F6}\nRMSE: {metrics.Rmse:F6}\nMax Abs: {metrics.MaxAbsError:F6}\nImprovement: {metrics.ImprovementRatio:F2}x";
+            OnPropertyChanged(nameof(MetricsText));
             AppendLog($"Fit complete. {metrics}");
             NotifyButtons();
         }
@@ -196,6 +238,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             AppendLog($"Fit failed: {ex.Message}");
+        }
+        finally
+        {
+            IsBusy = false;
         }
     }
 
@@ -214,11 +260,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         _cts?.Cancel();
         _cts = new CancellationTokenSource();
+        IsBusy = true;
 
         try
         {
             AppendLog("Export started...");
-            var lut = await Task.Run(() => _baker.Bake(_model, SelectedLutSize), _cts.Token);
+            var lut = await Task.Run(() => _baker.Bake(_model, SelectedLutSize, !IsFullRange, _cts.Token), _cts.Token);
             await _exporter.ExportAsync(dlg.FileName, lut, "LutMatcher", _cts.Token);
             AppendLog($"Exported: {dlg.FileName}");
         }
@@ -230,18 +277,41 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         {
             AppendLog($"Export failed: {ex.Message}");
         }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
-    private static Mat ApplyModelToImage(Mat bgr, ColorTransformModel model)
+    private (Mat Target, string Message) BuildAlignedTarget(Mat reference, Mat target, CancellationToken cancellationToken)
     {
-        using var rgb = new Mat();
-        Cv2.CvtColor(bgr, rgb, ColorConversionCodes.BGR2RGB);
-        using var rgbFloat = new Mat();
-        rgb.ConvertTo(rgbFloat, MatType.CV_32FC3, 1.0 / 255.0);
+        if (!EnableAutoAlign)
+        {
+            var resized = target.Size() == reference.Size() ? target.Clone() : target.Resize(reference.Size());
+            return (resized, "Auto align disabled.");
+        }
 
-        var output = new Mat(rgbFloat.Rows, rgbFloat.Cols, MatType.CV_32FC3);
+        if (_alignment.TryAlignByTranslation(reference, target, out var aligned, out var shift, cancellationToken))
+        {
+            return (aligned, $"Auto align shift: dx={shift.X:F2}, dy={shift.Y:F2}");
+        }
+
+        var fallback = target.Size() == reference.Size() ? target.Clone() : target.Resize(reference.Size());
+        return (fallback, "Auto align failed. Falling back to simple resize.");
+    }
+
+    private Mat ApplyModelToImage(Mat bgr, ColorTransformModel model, bool videoRange, CancellationToken cancellationToken)
+    {
+        using var rgbFloat = _range.ConvertBgrToWorkingRgb(bgr, videoRange);
+
+        using var output = new Mat(rgbFloat.Rows, rgbFloat.Cols, MatType.CV_32FC3);
         for (var y = 0; y < rgbFloat.Rows; y++)
         {
+            if ((y & 15) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             for (var x = 0; x < rgbFloat.Cols; x++)
             {
                 var p = rgbFloat.At<Vec3f>(y, x);
@@ -254,19 +324,32 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
         }
 
-        using var out8 = new Mat();
-        output.ConvertTo(out8, MatType.CV_8UC3, 255.0);
-        var outBgr = new Mat();
-        Cv2.CvtColor(out8, outBgr, ColorConversionCodes.RGB2BGR);
-        return outBgr;
+        return _range.ConvertWorkingRgbToBgr(output, videoRange);
     }
 
     private static Mat BuildDiff(Mat reference, Mat corrected)
     {
+        using var correctedResized = corrected.Resize(reference.Size());
+        using var ref32 = new Mat();
+        using var corr32 = new Mat();
+        reference.ConvertTo(ref32, MatType.CV_32FC3, 1.0 / 255.0);
+        correctedResized.ConvertTo(corr32, MatType.CV_32FC3, 1.0 / 255.0);
         using var diff = new Mat();
-        Cv2.Absdiff(reference, corrected.Resize(reference.Size()), diff);
+        Cv2.Absdiff(ref32, corr32, diff);
+        var channels = diff.Split();
+        using var err = new Mat();
+        Cv2.AddWeighted(channels[0], 1.0 / 3.0, channels[1], 1.0 / 3.0, 0, err);
+        Cv2.AddWeighted(err, 1.0, channels[2], 1.0 / 3.0, 0, err);
+        foreach (var channel in channels)
+        {
+            channel.Dispose();
+        }
+
+        using var err8 = new Mat();
+        Cv2.Normalize(err, err, 0, 255, NormTypes.MinMax);
+        err.ConvertTo(err8, MatType.CV_8UC1);
         var outMat = new Mat();
-        Cv2.ApplyColorMap(diff, outMat, ColormapTypes.Jet);
+        Cv2.ApplyColorMap(err8, outMat, ColormapTypes.Turbo);
         return outMat;
     }
 
@@ -295,18 +378,77 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         TargetPreview = null;
         CorrectedPreview = null;
         DiffPreview = null;
+        MetricsText = "No metrics yet.";
         LogText = "Reset complete.";
         OnPropertyChanged(nameof(ReferencePreview));
         OnPropertyChanged(nameof(TargetPreview));
         OnPropertyChanged(nameof(CorrectedPreview));
         OnPropertyChanged(nameof(DiffPreview));
+        OnPropertyChanged(nameof(MetricsText));
         NotifyButtons();
+    }
+
+    private void ApplyRoi()
+    {
+        ParseRoi();
+        AppendLog("ROI applied.");
+    }
+
+    private void ClearRoi()
+    {
+        RoiX = "0";
+        RoiY = "0";
+        RoiW = "0";
+        RoiH = "0";
+        OnPropertyChanged(nameof(RoiX));
+        OnPropertyChanged(nameof(RoiY));
+        OnPropertyChanged(nameof(RoiW));
+        OnPropertyChanged(nameof(RoiH));
+        AppendLog("ROI cleared.");
     }
 
     private void NotifyButtons()
     {
+        (LoadReferenceCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (LoadTargetCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (LoadReferenceCameraCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (LoadTargetCameraCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (AutoFitCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ExportCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ResetCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (CancelCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (RefreshCameraListCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ApplyRoiCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (ClearRoiCommand as RelayCommand)?.NotifyCanExecuteChanged();
+    }
+
+    private void RefreshCameraList()
+    {
+        var options = _loader.GetAvailableCameras()
+            .ToList();
+        CameraOptions = options;
+
+        if (options.Count == 0)
+        {
+            SelectedReferenceCamera = null;
+            SelectedTargetCamera = null;
+            AppendLog("No cameras detected.");
+            return;
+        }
+
+        if (SelectedReferenceCamera is null || options.All(v => v.Index != SelectedReferenceCamera.Index))
+        {
+            SelectedReferenceCamera = options[0];
+            OnPropertyChanged(nameof(SelectedReferenceCamera));
+        }
+
+        if (SelectedTargetCamera is null || options.All(v => v.Index != SelectedTargetCamera.Index))
+        {
+            SelectedTargetCamera = options.Count > 1 ? options[1] : options[0];
+            OnPropertyChanged(nameof(SelectedTargetCamera));
+        }
+
+        AppendLog($"Camera list refreshed: {string.Join(", ", options.Select(v => v.Name))}");
     }
 
     private void AppendLog(string message) => LogText += Environment.NewLine + $"[{DateTime.Now:HH:mm:ss}] {message}";

@@ -5,28 +5,40 @@ namespace LutMatcher.Core.Services;
 
 public sealed class SampleExtractor
 {
-    public SampleSet Extract(Mat referenceBgr, Mat targetBgr, Rect? roi, bool videoRange, int maxSamples = 200000)
+    private readonly ColorRangeService _range = new();
+
+    public SampleSet Extract(
+        Mat referenceBgr,
+        Mat targetBgr,
+        Rect? roi,
+        bool videoRange,
+        int maxSamples = 200000,
+        int randomSeed = 1234,
+        CancellationToken cancellationToken = default)
     {
         if (referenceBgr.Empty() || targetBgr.Empty())
         {
             throw new InvalidOperationException("Input image is empty.");
         }
 
-        using var refRgb = ConvertToNormalizedRgb(referenceBgr, videoRange);
+        using var refRgb = _range.ConvertBgrToWorkingRgb(referenceBgr, videoRange);
         using var tgtResized = targetBgr.Size() == referenceBgr.Size() ? targetBgr.Clone() : targetBgr.Resize(referenceBgr.Size());
-        using var tgtRgb = ConvertToNormalizedRgb(tgtResized, videoRange);
+        using var tgtRgb = _range.ConvertBgrToWorkingRgb(tgtResized, videoRange);
 
         var safeRoi = NormalizeRoi(roi, refRgb.Width, refRgb.Height);
         using var refCrop = new Mat(refRgb, safeRoi);
         using var tgtCrop = new Mat(tgtRgb, safeRoi);
 
-        var refSamples = new List<float[]>();
-        var tgtSamples = new List<float[]>();
-        var step = Math.Max(1, (int)Math.Sqrt((safeRoi.Width * safeRoi.Height) / (double)maxSamples));
+        var buckets = Enumerable.Range(0, 8).Select(_ => new List<(float[] r, float[] t)>()).ToArray();
 
-        for (var y = 0; y < safeRoi.Height; y += step)
+        for (var y = 0; y < safeRoi.Height; y++)
         {
-            for (var x = 0; x < safeRoi.Width; x += step)
+            if ((y & 31) == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            for (var x = 0; x < safeRoi.Width; x++)
             {
                 var r = refCrop.At<Vec3f>(y, x);
                 var t = tgtCrop.At<Vec3f>(y, x);
@@ -35,9 +47,45 @@ public sealed class SampleExtractor
                     continue;
                 }
 
-                refSamples.Add([r.Item0, r.Item1, r.Item2]);
-                tgtSamples.Add([t.Item0, t.Item1, t.Item2]);
+                var rr = new[] { r.Item0, r.Item1, r.Item2 };
+                var tt = new[] { t.Item0, t.Item1, t.Item2 };
+                var luma = (rr[0] + rr[1] + rr[2]) / 3f;
+                var bucket = Math.Clamp((int)(luma * buckets.Length), 0, buckets.Length - 1);
+                buckets[bucket].Add((rr, tt));
             }
+        }
+
+        var refSamples = new List<float[]>(Math.Min(maxSamples, safeRoi.Width * safeRoi.Height));
+        var tgtSamples = new List<float[]>(Math.Min(maxSamples, safeRoi.Width * safeRoi.Height));
+        var rng = new Random(randomSeed);
+        var targetPerBucket = Math.Max(1, maxSamples / buckets.Length);
+        var leftovers = new List<(float[] r, float[] t)>();
+        foreach (var bucket in buckets)
+        {
+            var shuffled = bucket.OrderBy(_ => rng.Next()).ToList();
+            var take = Math.Min(targetPerBucket, shuffled.Count);
+            for (var i = 0; i < take; i++)
+            {
+                var sample = shuffled[i];
+                refSamples.Add(sample.r);
+                tgtSamples.Add(sample.t);
+            }
+
+            for (var i = take; i < shuffled.Count; i++)
+            {
+                leftovers.Add(shuffled[i]);
+            }
+        }
+
+        foreach (var sample in leftovers.OrderBy(_ => rng.Next()))
+        {
+            if (refSamples.Count >= maxSamples)
+            {
+                break;
+            }
+
+            refSamples.Add(sample.r);
+            tgtSamples.Add(sample.t);
         }
 
         if (refSamples.Count < 128)
@@ -73,23 +121,5 @@ public sealed class SampleExtractor
         const float epsilon = 0.01f;
         return v.Item0 < epsilon || v.Item1 < epsilon || v.Item2 < epsilon ||
                v.Item0 > 1f - epsilon || v.Item1 > 1f - epsilon || v.Item2 > 1f - epsilon;
-    }
-
-    private static Mat ConvertToNormalizedRgb(Mat bgr, bool videoRange)
-    {
-        using var floatBgr = new Mat();
-        bgr.ConvertTo(floatBgr, MatType.CV_32FC3, 1.0 / 255.0);
-
-        if (videoRange)
-        {
-            Cv2.Subtract(floatBgr, new Scalar(16.0 / 255.0, 16.0 / 255.0, 16.0 / 255.0), floatBgr);
-            Cv2.Divide(floatBgr, new Scalar(219.0 / 255.0, 219.0 / 255.0, 219.0 / 255.0), floatBgr);
-            Cv2.Min(floatBgr, new Scalar(1, 1, 1), floatBgr);
-            Cv2.Max(floatBgr, new Scalar(0, 0, 0), floatBgr);
-        }
-
-        var rgb = new Mat();
-        Cv2.CvtColor(floatBgr, rgb, ColorConversionCodes.BGR2RGB);
-        return rgb;
     }
 }

@@ -21,7 +21,7 @@ Windows desktop application (WPF, .NET 8) to fit an OBS-compatible 3D LUT (`.cub
 3. Build solution (`Debug` or `Release`, Any CPU).
 4. Run `LutMatcher.App` as startup project.
 
-## Usage (MVP)
+## Usage
 
 1. Click **Load Reference** and select an image/video file.
 2. Click **Load Target** and select a matching frame source.
@@ -29,18 +29,19 @@ Windows desktop application (WPF, .NET 8) to fit an OBS-compatible 3D LUT (`.cub
 4. Optionally set ROI (`x, y, width, height`).
    - Set width/height <= 0 to use full frame.
 5. Click **Auto Fit LUT**.
-6. Check **Corrected** and **Diff** previews and metrics in log panel.
-7. Click **Export LUT** and save a `.cube` file.
+6. Optionally toggle **Enable Auto Align** to estimate and apply translation shift.
+7. Check **Corrected** and **Diff** previews and the metrics block.
+8. Click **Export LUT** and save a `.cube` file.
 
 ## Supported input formats
 
 - Image: `png`, `jpg`, `bmp`, `tif`
-- Video (first-frame MVP): `mp4`, `mov`, `mkv`, `avi`
-- Camera/capture devices are planned through OpenCV `VideoCapture` extension.
+- Video: `mp4`, `mov`, `mkv`, `avi` (single-frame extraction path in current UI)
+- Camera: OpenCV `VideoCapture` device loading
 
-## Design note: fitting pipeline
+## Design note
 
-The current MVP uses a two-step transform model:
+The fitting pipeline uses a two-step transform model:
 
 1. **Per-channel 1D tone curve (256 bins)**
    - build paired sample mapping from corresponding pixels
@@ -53,11 +54,25 @@ The current MVP uses a two-step transform model:
    - least-squares fit on tone-corrected samples
    - optional iterative outlier rejection
 
-The final model is baked into a 3D LUT (`17/33/65`, default `33`).
-LUT writing follows standard `.cube` order (R fastest, B slowest) with 6-decimal precision.
+### Range handling
+
+- `ColorRangeService` is the single conversion layer for encoded RGB and working RGB.
+- Full range mode keeps encoded values in `[0,1]`.
+- Video range mode normalizes encoded legal range (`16..235`) into working `[0,1]` and denormalizes output back to legal range.
+
+### Alignment
+
+- `AlignmentService` provides optional translation-only alignment before sample extraction.
+- Estimated `dx/dy` shift is logged and the aligned frame is used for fitting and corrected preview generation.
+
+### LUT baking
+
+- LUT entries are generated in `.cube` order (R fastest, B slowest).
+- Full range bake uses direct encoded domain/output.
+- Video range bake normalizes encoded input -> applies fitted model -> denormalizes output.
 
 ## Notes
 
-- MVP prioritizes paired image workflow.
+- The app is optimized for paired frame calibration workflows.
 - Initial implementation assumes SDR RGB workflow.
 - Python is not used.
