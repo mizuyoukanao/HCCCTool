@@ -153,12 +153,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         RefreshCameraList();
         var rawDelay = reference ? ReferenceFrameDelay : TargetFrameDelay;
         var selectedCamera = reference ? SelectedReferenceCamera : SelectedTargetCamera;
-        if (selectedCamera is null)
+        if (selectedCamera is not { } camera)
         {
             AppendLog($"No {(reference ? "Reference" : "Target")} camera selected.");
             return;
         }
-        var deviceIndex = selectedCamera.Index;
+        var deviceIndex = camera.Index;
         if (!int.TryParse(rawDelay, out var frameDelay) || frameDelay < 0)
         {
             AppendLog($"Frame delay is invalid: {rawDelay}");
@@ -183,7 +183,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(TargetPreview));
             }
 
-            AppendLog($"Loaded {(reference ? "Reference" : "Target")} from {selectedCamera.Name} (delay: {frameDelay} frames).");
+            AppendLog($"Loaded {(reference ? "Reference" : "Target")} from {camera.Name} (delay: {frameDelay} frames).");
             NotifyButtons();
         }
         catch (Exception ex)
@@ -436,13 +436,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             return;
         }
 
-        if (SelectedReferenceCamera is null || options.All(v => v.Index != SelectedReferenceCamera.Index))
+        if (SelectedReferenceCamera is not { } selectedReferenceCamera || options.All(v => v.Index != selectedReferenceCamera.Index))
         {
             SelectedReferenceCamera = options[0];
             OnPropertyChanged(nameof(SelectedReferenceCamera));
         }
 
-        if (SelectedTargetCamera is null || options.All(v => v.Index != SelectedTargetCamera.Index))
+        if (SelectedTargetCamera is not { } selectedTargetCamera || options.All(v => v.Index != selectedTargetCamera.Index))
         {
             SelectedTargetCamera = options.Count > 1 ? options[1] : options[0];
             OnPropertyChanged(nameof(SelectedTargetCamera));
