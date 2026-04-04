@@ -1,0 +1,33 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LutMatcher.App", "LutMatcher.App\LutMatcher.App.csproj", "{CE3A3F66-D5A2-447A-AFA7-4A364067A4B4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LutMatcher.Core", "LutMatcher.Core\LutMatcher.Core.csproj", "{E9CA8E72-7C87-4C87-93A6-FA3B9F8274FC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LutMatcher.Tests", "LutMatcher.Tests\LutMatcher.Tests.csproj", "{539A86E9-BEB4-40C2-B356-D26FDB31BAED}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CE3A3F66-D5A2-447A-AFA7-4A364067A4B4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CE3A3F66-D5A2-447A-AFA7-4A364067A4B4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CE3A3F66-D5A2-447A-AFA7-4A364067A4B4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CE3A3F66-D5A2-447A-AFA7-4A364067A4B4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E9CA8E72-7C87-4C87-93A6-FA3B9F8274FC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E9CA8E72-7C87-4C87-93A6-FA3B9F8274FC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E9CA8E72-7C87-4C87-93A6-FA3B9F8274FC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E9CA8E72-7C87-4C87-93A6-FA3B9F8274FC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{539A86E9-BEB4-40C2-B356-D26FDB31BAED}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{539A86E9-BEB4-40C2-B356-D26FDB31BAED}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{539A86E9-BEB4-40C2-B356-D26FDB31BAED}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{539A86E9-BEB4-40C2-B356-D26FDB31BAED}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
