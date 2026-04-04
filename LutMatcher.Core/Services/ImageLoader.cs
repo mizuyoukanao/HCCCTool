@@ -4,6 +4,8 @@ namespace LutMatcher.Core.Services;
 
 public sealed class ImageLoader
 {
+    public readonly record struct CameraInfo(int Index, string Name);
+
     private static readonly HashSet<string> ImageExtensions = [".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"];
     private static readonly HashSet<string> VideoExtensions = [".mp4", ".mov", ".mkv", ".avi"];
     private static readonly VideoCaptureAPIs[] CameraApis =
@@ -12,6 +14,7 @@ public sealed class ImageLoader
         VideoCaptureAPIs.DSHOW,
         VideoCaptureAPIs.ANY
     ];
+    private const int MaxCameraProbeCount = 10;
 
     public Mat LoadFirstFrame(string path)
     {
@@ -82,5 +85,26 @@ public sealed class ImageLoader
         }
 
         throw new InvalidOperationException($"Failed to open camera/capture device index {deviceIndex}.");
+    }
+
+    public List<CameraInfo> GetAvailableCameras(int maxProbeCount = MaxCameraProbeCount)
+    {
+        var cameras = new List<CameraInfo>();
+        for (var index = 0; index < maxProbeCount; index++)
+        {
+            foreach (var api in CameraApis)
+            {
+                using var cap = new VideoCapture(index, api);
+                if (!cap.IsOpened())
+                {
+                    continue;
+                }
+
+                cameras.Add(new CameraInfo(index, $"Camera {index + 1} ({api})"));
+                break;
+            }
+        }
+
+        return cameras;
     }
 }
