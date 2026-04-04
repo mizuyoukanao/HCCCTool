@@ -15,11 +15,11 @@ public sealed class AlignmentService
             using var referenceGray = BuildGrayFloat(referenceBgr);
             using var targetGray = BuildGrayFloat(alignedTargetBgr);
             cancellationToken.ThrowIfCancellationRequested();
-            shift = Cv2.PhaseCorrelate(targetGray, referenceGray);
+            shift = Cv2.PhaseCorrelate(targetGray, referenceGray, null, out _);
 
-            var affine = Mat.Eye(2, 3, MatType.CV_64FC1);
-            affine.Set(0, 2, shift.X);
-            affine.Set(1, 2, shift.Y);
+            using var affine = Mat.Eye(2, 3, MatType.CV_64FC1).ToMat();
+            affine.Set<double>(0, 2, shift.X);
+            affine.Set<double>(1, 2, shift.Y);
 
             var warped = new Mat();
             Cv2.WarpAffine(
