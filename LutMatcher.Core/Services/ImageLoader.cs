@@ -18,8 +18,7 @@ public sealed class ImageLoader
 
     public Mat LoadFirstFrame(string path)
     {
-        var ext = Path.GetExtension(path).ToLowerInvariant();
-        if (ImageExtensions.Contains(ext))
+        if (IsImagePath(path))
         {
             var image = Cv2.ImRead(path, ImreadModes.Color);
             if (image.Empty())
@@ -30,7 +29,7 @@ public sealed class ImageLoader
             return image;
         }
 
-        if (VideoExtensions.Contains(ext))
+        if (IsVideoPath(path))
         {
             using var cap = new VideoCapture(path);
             if (!cap.IsOpened())
@@ -50,6 +49,9 @@ public sealed class ImageLoader
 
         throw new NotSupportedException("Unsupported input format.");
     }
+
+    public bool IsImagePath(string path) => ImageExtensions.Contains(Path.GetExtension(path).ToLowerInvariant());
+    public bool IsVideoPath(string path) => VideoExtensions.Contains(Path.GetExtension(path).ToLowerInvariant());
 
     public Mat LoadFirstFrameFromCamera(int deviceIndex, int frameDelay = 0, int warmupFrames = 5)
     {
