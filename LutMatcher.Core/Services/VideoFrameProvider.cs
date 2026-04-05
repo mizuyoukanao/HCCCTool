@@ -11,7 +11,7 @@ public sealed class VideoFrameProvider : IDisposable
     public double Fps { get; private set; }
     public TimeSpan Duration { get; private set; }
 
-    public bool IsOpen => _capture is { IsOpened: true };
+    public bool IsOpen => _capture is not null && _capture.IsOpened();
 
     public void Open(string path)
     {
