@@ -46,16 +46,24 @@ public sealed class CameraCaptureService : IDisposable
         Stop();
         cancellationToken.ThrowIfCancellationRequested();
 
-        _referenceCapture = OpenCapture(referenceDeviceIndex, out var refInfo);
-        _targetCapture = OpenCapture(targetDeviceIndex, out var targetInfo);
+        try
+        {
+            _referenceCapture = OpenCapture(referenceDeviceIndex, out var refInfo);
+            _targetCapture = OpenCapture(targetDeviceIndex, out var targetInfo);
 
-        ReferenceDeviceInfo = refInfo;
-        TargetDeviceInfo = targetInfo;
+            ReferenceDeviceInfo = refInfo;
+            TargetDeviceInfo = targetInfo;
 
-        Warmup(_referenceCapture, cancellationToken);
-        Warmup(_targetCapture, cancellationToken);
-        UpdateLatestPair(cancellationToken);
-        IsRunning = true;
+            Warmup(_referenceCapture, cancellationToken);
+            Warmup(_targetCapture, cancellationToken);
+            IsRunning = true;
+            UpdateLatestPair(cancellationToken);
+        }
+        catch
+        {
+            Stop();
+            throw;
+        }
     }
 
     public void UpdateLatestPair(CancellationToken cancellationToken = default)
