@@ -16,8 +16,12 @@
         <StackPanel Orientation="Horizontal" Margin="0 0 0 8">
             <Button Content="Load Reference" Command="{Binding LoadReferenceCommand}" Margin="0 0 8 0" />
             <Button Content="Load Target" Command="{Binding LoadTargetCommand}" Margin="0 0 8 0" />
-            <Button Content="Load Ref Camera" Command="{Binding LoadReferenceCameraCommand}" Margin="0 0 8 0" />
-            <Button Content="Load Target Camera" Command="{Binding LoadTargetCameraCommand}" Margin="0 0 8 0" />
+            <Button Content="Use Current Frames" Command="{Binding UseCurrentFramesCommand}" Margin="0 0 8 0" />
+            <Button Content="Start Cameras" Command="{Binding StartCamerasCommand}" Margin="0 0 8 0" />
+            <Button Content="Stop Cameras" Command="{Binding StopCamerasCommand}" Margin="0 0 8 0" />
+            <Button Content="Freeze Pair" Command="{Binding FreezePairCommand}" Margin="0 0 8 0" />
+            <Button Content="Save Session" Command="{Binding SaveSessionCommand}" Margin="0 0 8 0" />
+            <Button Content="Load Session" Command="{Binding LoadSessionCommand}" Margin="0 0 8 0" />
             <Button Content="Auto Fit LUT" Command="{Binding AutoFitCommand}" Margin="0 0 8 0" />
             <Button Content="Export LUT" Command="{Binding ExportCommand}" Margin="0 0 8 0" />
             <Button Content="Reset" Command="{Binding ResetCommand}" Margin="0 0 8 0" />
@@ -78,6 +82,7 @@
                         <Button Content="Apply ROI" Command="{Binding ApplyRoiCommand}" Margin="0 0 8 0" />
                         <Button Content="Clear ROI" Command="{Binding ClearRoiCommand}" />
                     </StackPanel>
+                    <TextBlock Text="{Binding ActiveRoiText}" Margin="0 4 0 0"/>
 
                     <CheckBox Content="Enable Auto Align" IsChecked="{Binding EnableAutoAlign}" Margin="0 8 0 0"/>
 
@@ -92,13 +97,30 @@
                         <ComboBox ItemsSource="{Binding CameraOptions}" DisplayMemberPath="Name" SelectedItem="{Binding SelectedTargetCamera}" Margin="0 2 4 0"/>
                     </UniformGrid>
 
-                    <TextBlock Text="Frame delay (frames)" FontWeight="SemiBold" Margin="0 8 0 0"/>
-                    <UniformGrid Rows="2" Columns="2" Margin="0 2 0 0">
-                        <TextBlock Text="Reference"/>
-                        <TextBlock Text="Target"/>
-                        <TextBox Text="{Binding ReferenceFrameDelay}" Margin="0 2 4 0"/>
-                        <TextBox Text="{Binding TargetFrameDelay}" Margin="0 2 4 0"/>
-                    </UniformGrid>
+                    <TextBlock Text="Video Frame Selection" FontWeight="SemiBold" Margin="0 8 0 0"/>
+                    <TextBlock Text="{Binding ReferenceSourceText}" Margin="0 2 0 0"/>
+                    <TextBlock Text="{Binding ReferenceVideoInfo}" Margin="0 2 0 0"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBox Width="70" Text="{Binding ReferenceVideoFrameIndex}" Margin="0 2 4 0"/>
+                        <Button Content="Seek Ref Frame" Command="{Binding SeekReferenceFrameCommand}" Margin="0 2 8 0"/>
+                        <TextBox Width="70" Text="{Binding ReferenceVideoTimeMs}" Margin="0 2 4 0"/>
+                        <Button Content="Seek Ref ms" Command="{Binding SeekReferenceTimeCommand}" Margin="0 2 0 0"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding TargetSourceText}" Margin="0 4 0 0"/>
+                    <TextBlock Text="{Binding TargetVideoInfo}" Margin="0 2 0 0"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBox Width="70" Text="{Binding TargetVideoFrameIndex}" Margin="0 2 4 0"/>
+                        <Button Content="Seek Target Frame" Command="{Binding SeekTargetFrameCommand}" Margin="0 2 8 0"/>
+                        <TextBox Width="70" Text="{Binding TargetVideoTimeMs}" Margin="0 2 4 0"/>
+                        <Button Content="Seek Target ms" Command="{Binding SeekTargetTimeCommand}" Margin="0 2 0 0"/>
+                    </StackPanel>
+                    <TextBlock Text="Manual offset (target side)" FontWeight="SemiBold" Margin="0 8 0 0"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Frames" VerticalAlignment="Center" Margin="0 0 4 0"/>
+                        <TextBox Width="60" Text="{Binding ManualOffsetFrames}" Margin="0 2 8 0"/>
+                        <TextBlock Text="ms" VerticalAlignment="Center" Margin="0 0 4 0"/>
+                        <TextBox Width="60" Text="{Binding ManualOffsetMs}" Margin="0 2 0 0"/>
+                    </StackPanel>
                 </StackPanel>
             </GroupBox>
 

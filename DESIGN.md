@@ -1,32 +1,43 @@
 # LUT Matcher Design Note
 
-## Range handling
+## Video workflow
 
-- `ColorRangeService` is used by sample extraction, corrected preview generation, and LUT baking.
-- Encoded RGB is converted to working RGB `[0,1]` before fitting.
-- Full range mode uses identity conversion.
-- Video range mode uses legal-range conversion (`16/255` offset, `219/255` scale) for both normalize and denormalize.
+- `VideoFrameProvider` owns one `VideoCapture` per side.
+- It exposes:
+  - open from file path
+  - metadata (`FrameCount`, `Fps`, `Duration`)
+  - seek by frame index
+  - seek by timestamp
+  - current frame/timestamp reporting
+- `MainWindowViewModel` keeps independent Reference/Target selection state.
+- Fitting always uses the currently selected in-memory Reference/Target frames (not fixed first frame).
+- Optional manual offset can shift target selection by frames or milliseconds.
 
-## Alignment
+## Camera workflow
 
-- `AlignmentService` estimates translation shift via phase correlation.
-- If enabled, target is aligned before sample extraction.
-- On failure, the pipeline falls back to resize-only behavior.
+- `CameraCaptureService` starts two capture devices simultaneously (Reference + Target).
+- It supports:
+  - discover/refresh device list
+  - start/stop pair capture
+  - refresh latest preview pair
+  - `FreezePair` for near-simultaneous paired capture
+- Service disposes `VideoCapture`/`Mat` resources on stop/reset and repeated start/stop cycles.
 
-## Fitting pipeline
+## Session format
 
-1. Extract paired samples from corresponding pixels (`SampleExtractor`).
-2. Fit per-channel tone curves (`ToneCurveFitter`).
-3. Fit affine color matrix + bias (`ColorMatrixFitter`).
-4. Evaluate fit metrics (`MetricsCalculator`).
+- `SessionSerializer` stores a `.lmz` zip package.
+- Package entries:
+  - `session.json`: source type, source paths, video selection, ROI/range/LUT size/alignment, optional model and metrics.
+  - `reference.png`: current reference frame snapshot (if available).
+  - `target.png`: current target frame snapshot (if available).
+- Loading restores the saved state and previews so calibration can continue.
 
-## LUT baking behavior
+## Cancellation behavior
 
-- `LutBaker` always iterates `.cube` order (R fastest, B slowest).
-- Full range mode:
-  - input domain is direct `[0,1]`
-  - output entries are direct encoded `[0,1]`
-- Video range mode:
-  - LUT input is interpreted as encoded legal range
-  - values are normalized to working range before model application
-  - transformed values are denormalized back to legal range before writing entries
+- Long operations run with cancellation tokens:
+  - video seek/extract tasks
+  - fit image loops
+  - LUT bake/export
+  - session save/load
+  - camera start warmup/update paths
+- UI catches `OperationCanceledException` and keeps app state consistent.
